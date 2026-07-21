@@ -63,6 +63,54 @@ export const deleteAttachmentSchema = z.object({
   attachmentId: cuid,
 });
 
+export const FIELD_TYPES = ["short_text", "long_text", "attachment", "single_choice", "multi_choice"] as const;
+const fieldType = z.enum(FIELD_TYPES);
+const fieldOption = z.string().trim().min(1).max(60);
+
+export const createFieldDefinitionSchema = z
+  .object({
+    columnId: cuid,
+    label: z.string().trim().min(1, "Informe um nome").max(60),
+    type: fieldType,
+    options: z.array(fieldOption).max(30).optional(),
+  })
+  .refine(
+    (data) => (data.type === "single_choice" || data.type === "multi_choice" ? (data.options?.length ?? 0) >= 2 : true),
+    { message: "Adicione ao menos 2 opcoes", path: ["options"] },
+  );
+
+export const updateFieldDefinitionSchema = z.object({
+  fieldDefinitionId: cuid,
+  label: z.string().trim().min(1, "Informe um nome").max(60).optional(),
+  options: z.array(fieldOption).max(30).optional(),
+});
+
+export const deleteFieldDefinitionSchema = z.object({
+  fieldDefinitionId: cuid,
+});
+
+export const reorderFieldDefinitionsSchema = z.object({
+  columnId: cuid,
+  orderedFieldDefinitionIds: z.array(cuid).min(1).max(100),
+});
+
+export const setTextFieldValueSchema = z.object({
+  cardId: cuid,
+  fieldDefinitionId: cuid,
+  value: z.string().trim().max(2000),
+});
+
+export const setChoiceFieldValueSchema = z.object({
+  cardId: cuid,
+  fieldDefinitionId: cuid,
+  selected: z.array(fieldOption).max(30),
+});
+
+export const deleteFieldAttachmentSchema = z.object({
+  cardId: cuid,
+  fieldDefinitionId: cuid,
+});
+
 // Media upload constraints
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 export const MAX_VIDEO_BYTES = 80 * 1024 * 1024; // 80MB

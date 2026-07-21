@@ -5,19 +5,27 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { deleteMediaFile, storeMediaAttachment, MediaValidationError } from "@/lib/media-storage";
+import { encodeOptions } from "@/lib/field-options";
 import {
   createBoardSchema,
   createCardSchema,
   createColumnSchema,
+  createFieldDefinitionSchema,
   deleteAttachmentSchema,
   deleteBoardSchema,
   deleteCardSchema,
   deleteColumnSchema,
+  deleteFieldAttachmentSchema,
+  deleteFieldDefinitionSchema,
   moveCardSchema,
   renameColumnSchema,
   reorderColumnsSchema,
+  reorderFieldDefinitionsSchema,
+  setChoiceFieldValueSchema,
+  setTextFieldValueSchema,
   updateBoardSchema,
   updateCardSchema,
+  updateFieldDefinitionSchema,
 } from "@/lib/validation";
 
 type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
@@ -56,9 +64,13 @@ export async function getBoard(boardId: string) {
       columns: {
         orderBy: { order: "asc" },
         include: {
+          fieldDefinitions: { orderBy: { order: "asc" } },
           cards: {
             orderBy: { order: "asc" },
-            include: { attachments: { orderBy: { createdAt: "asc" } } },
+            include: {
+              attachments: { orderBy: { createdAt: "asc" } },
+              fieldValues: { include: { attachment: true, fieldDefinition: true } },
+            },
           },
         },
       },
@@ -183,13 +195,30 @@ export async function deleteColumn(input: unknown): Promise<ActionResult> {
 
   const column = await prisma.column.findUnique({
     where: { id: parsed.data.columnId },
-    include: { cards: { include: { attachments: true } } },
+    include: {
+      cards: { include: { attachments: true } },
+      fieldDefinitions: { include: { values: { include: { attachment: true } } } },
+    },
   });
   if (!column) return fail("Fase nao encontrada.");
 
-  const filenames = column.cards.flatMap((c) => c.attachments.map((a) => a.filename));
-  await prisma.column.delete({ where: { id: parsed.data.columnId } });
-  await Promise.all(filenames.map(deleteMediaFile));
+  // Cards in this column cascade-delete along with it, taking their
+  // attachments with them. But this column's field definitions can hold
+  // values (kept as history) on cards that have since moved to OTHER
+  // columns, so those attachments need to be cleaned up explicitly.
+  const fieldAttachments = column.fieldDefinitions.flatMap((f) =>
+    f.values.flatMap((v) => (v.attachment ? [v.attachment] : [])),
+  );
+  const filenames = new Set([
+    ...column.cards.flatMap((c) => c.attachments.map((a) => a.filename)),
+    ...fieldAttachments.map((a) => a.filename),
+  ]);
+
+  await prisma.$transaction([
+    prisma.attachment.deleteMany({ where: { id: { in: fieldAttachments.map((a) => a.id) } } }),
+    prisma.column.delete({ where: { id: parsed.data.columnId } }),
+  ]);
+  await Promise.all([...filenames].map(deleteMediaFile));
 
   return { ok: true, data: undefined };
 }
@@ -213,6 +242,250 @@ export async function reorderColumns(input: unknown): Promise<ActionResult> {
   );
 
   revalidatePath(`/boards/${boardId}`);
+  return { ok: true, data: undefined };
+}
+
+export async function createFieldDefinition(input: unknown): Promise<ActionResult<{ id: string }>> {
+  const key = await clientKey();
+  if (!rateLimit(`mutate:${key}`, 30).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
+
+  const parsed = createFieldDefinitionSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
+
+  const column = await prisma.column.findUnique({ where: { id: parsed.data.columnId } });
+  if (!column) return fail("Fase nao encontrada.");
+
+  const last = await prisma.fieldDefinition.findFirst({
+    where: { columnId: parsed.data.columnId },
+    orderBy: { order: "desc" },
+  });
+
+  const isChoice = parsed.data.type === "single_choice" || parsed.data.type === "multi_choice";
+
+  const field = await prisma.fieldDefinition.create({
+    data: {
+      columnId: parsed.data.columnId,
+      label: parsed.data.label,
+      type: parsed.data.type,
+      options: isChoice ? encodeOptions(parsed.data.options ?? []) : null,
+      order: (last?.order ?? -1) + 1,
+    },
+  });
+
+  revalidatePath(`/boards/${column.boardId}`);
+  return { ok: true, data: { id: field.id } };
+}
+
+export async function updateFieldDefinition(input: unknown): Promise<ActionResult> {
+  const key = await clientKey();
+  if (!rateLimit(`mutate:${key}`, 60).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
+
+  const parsed = updateFieldDefinitionSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
+
+  const field = await prisma.fieldDefinition.findUnique({
+    where: { id: parsed.data.fieldDefinitionId },
+    include: { column: true },
+  });
+  if (!field) return fail("Campo nao encontrado.");
+
+  const isChoice = field.type === "single_choice" || field.type === "multi_choice";
+
+  await prisma.fieldDefinition.update({
+    where: { id: parsed.data.fieldDefinitionId },
+    data: {
+      ...(parsed.data.label !== undefined ? { label: parsed.data.label } : {}),
+      ...(isChoice && parsed.data.options !== undefined ? { options: encodeOptions(parsed.data.options) } : {}),
+    },
+  });
+
+  revalidatePath(`/boards/${field.column.boardId}`);
+  return { ok: true, data: undefined };
+}
+
+export async function deleteFieldDefinition(input: unknown): Promise<ActionResult> {
+  const key = await clientKey();
+  if (!rateLimit(`mutate:${key}`, 30).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
+
+  const parsed = deleteFieldDefinitionSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
+
+  const field = await prisma.fieldDefinition.findUnique({
+    where: { id: parsed.data.fieldDefinitionId },
+    include: { column: true, values: { include: { attachment: true } } },
+  });
+  if (!field) return fail("Campo nao encontrado.");
+
+  const attachments = field.values.flatMap((v) => (v.attachment ? [v.attachment] : []));
+
+  // FieldValue rows cascade-delete with the field definition, but the
+  // Attachment rows they pointed to don't (Attachment -> FieldValue is the
+  // owning side), so they'd otherwise be left as orphaned DB rows pointing
+  // at files we're about to delete from disk.
+  await prisma.$transaction([
+    prisma.attachment.deleteMany({ where: { id: { in: attachments.map((a) => a.id) } } }),
+    prisma.fieldDefinition.delete({ where: { id: parsed.data.fieldDefinitionId } }),
+  ]);
+  await Promise.all(attachments.map((a) => deleteMediaFile(a.filename)));
+
+  revalidatePath(`/boards/${field.column.boardId}`);
+  return { ok: true, data: undefined };
+}
+
+export async function reorderFieldDefinitions(input: unknown): Promise<ActionResult> {
+  const key = await clientKey();
+  if (!rateLimit(`mutate:${key}`, 60).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
+
+  const parsed = reorderFieldDefinitionsSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
+
+  const { columnId, orderedFieldDefinitionIds } = parsed.data;
+
+  const column = await prisma.column.findUnique({ where: { id: columnId } });
+  if (!column) return fail("Fase nao encontrada.");
+
+  await prisma.$transaction(
+    orderedFieldDefinitionIds.map((id, index) =>
+      prisma.fieldDefinition.update({ where: { id, columnId }, data: { order: index } }),
+    ),
+  );
+
+  revalidatePath(`/boards/${column.boardId}`);
+  return { ok: true, data: undefined };
+}
+
+export async function setTextFieldValue(input: unknown): Promise<ActionResult> {
+  const key = await clientKey();
+  if (!rateLimit(`mutate:${key}`, 120).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
+
+  const parsed = setTextFieldValueSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
+
+  const field = await prisma.fieldDefinition.findUnique({ where: { id: parsed.data.fieldDefinitionId } });
+  if (!field) return fail("Campo nao encontrado.");
+  if (field.type !== "short_text" && field.type !== "long_text") return fail("Tipo de campo invalido.");
+
+  await prisma.fieldValue.upsert({
+    where: {
+      cardId_fieldDefinitionId: { cardId: parsed.data.cardId, fieldDefinitionId: parsed.data.fieldDefinitionId },
+    },
+    create: {
+      cardId: parsed.data.cardId,
+      fieldDefinitionId: parsed.data.fieldDefinitionId,
+      textValue: parsed.data.value,
+    },
+    update: { textValue: parsed.data.value },
+  });
+
+  return { ok: true, data: undefined };
+}
+
+export async function setChoiceFieldValue(input: unknown): Promise<ActionResult> {
+  const key = await clientKey();
+  if (!rateLimit(`mutate:${key}`, 120).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
+
+  const parsed = setChoiceFieldValueSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
+
+  const field = await prisma.fieldDefinition.findUnique({ where: { id: parsed.data.fieldDefinitionId } });
+  if (!field) return fail("Campo nao encontrado.");
+  if (field.type !== "single_choice" && field.type !== "multi_choice") return fail("Tipo de campo invalido.");
+
+  const validOptions = new Set(JSON.parse(field.options ?? "[]"));
+  const selected = parsed.data.selected.filter((opt) => validOptions.has(opt));
+  const bounded = field.type === "single_choice" ? selected.slice(0, 1) : selected;
+
+  await prisma.fieldValue.upsert({
+    where: {
+      cardId_fieldDefinitionId: { cardId: parsed.data.cardId, fieldDefinitionId: parsed.data.fieldDefinitionId },
+    },
+    create: {
+      cardId: parsed.data.cardId,
+      fieldDefinitionId: parsed.data.fieldDefinitionId,
+      choiceValue: encodeOptions(bounded),
+    },
+    update: { choiceValue: encodeOptions(bounded) },
+  });
+
+  return { ok: true, data: undefined };
+}
+
+export async function uploadFieldAttachment(
+  formData: FormData,
+): Promise<ActionResult<{ id: string; filename: string }>> {
+  const key = await clientKey();
+  if (!rateLimit(`upload:${key}`, 20).ok) return fail("Muitos uploads seguidos. Aguarde um instante.");
+
+  const cardId = formData.get("cardId");
+  const fieldDefinitionId = formData.get("fieldDefinitionId");
+  const file = formData.get("file");
+
+  if (typeof cardId !== "string" || cardId.length === 0) return fail("Card invalido.");
+  if (typeof fieldDefinitionId !== "string" || fieldDefinitionId.length === 0) return fail("Campo invalido.");
+  if (!(file instanceof File)) return fail("Nenhum arquivo enviado.");
+
+  const [card, field] = await Promise.all([
+    prisma.card.findUnique({ where: { id: cardId } }),
+    prisma.fieldDefinition.findUnique({
+      where: { id: fieldDefinitionId },
+      include: { values: { where: { cardId }, include: { attachment: true } } },
+    }),
+  ]);
+  if (!card) return fail("Card nao encontrado.");
+  if (!field || field.type !== "attachment") return fail("Campo invalido.");
+
+  try {
+    const stored = await storeMediaAttachment(file);
+    const attachment = await prisma.attachment.create({
+      data: {
+        cardId,
+        filename: stored.filename,
+        originalName: file.name.slice(0, 200),
+        mimeType: stored.mimeType,
+        size: stored.size,
+        width: stored.width,
+        height: stored.height,
+      },
+    });
+
+    const previous = field.values[0];
+
+    await prisma.fieldValue.upsert({
+      where: { cardId_fieldDefinitionId: { cardId, fieldDefinitionId } },
+      create: { cardId, fieldDefinitionId, attachmentId: attachment.id },
+      update: { attachmentId: attachment.id },
+    });
+
+    if (previous?.attachment) {
+      await prisma.attachment.delete({ where: { id: previous.attachment.id } });
+      await deleteMediaFile(previous.attachment.filename);
+    }
+
+    return { ok: true, data: { id: attachment.id, filename: attachment.filename } };
+  } catch (error) {
+    if (error instanceof MediaValidationError) return fail(error.message);
+    return fail("Falha ao processar o arquivo.");
+  }
+}
+
+export async function deleteFieldAttachment(input: unknown): Promise<ActionResult> {
+  const key = await clientKey();
+  if (!rateLimit(`mutate:${key}`, 60).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
+
+  const parsed = deleteFieldAttachmentSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
+
+  const value = await prisma.fieldValue.findUnique({
+    where: {
+      cardId_fieldDefinitionId: { cardId: parsed.data.cardId, fieldDefinitionId: parsed.data.fieldDefinitionId },
+    },
+    include: { attachment: true },
+  });
+  if (!value?.attachment) return fail("Anexo nao encontrado.");
+
+  await prisma.attachment.delete({ where: { id: value.attachment.id } });
+  await deleteMediaFile(value.attachment.filename);
+
   return { ok: true, data: undefined };
 }
 

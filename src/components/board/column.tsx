@@ -7,9 +7,10 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { useDroppable } from "@dnd-kit/core";
 import { useRouter } from "next/navigation";
 import { deleteColumn, renameColumn } from "@/lib/actions";
-import type { ColumnWithCards } from "@/lib/types";
+import type { ColumnWithCards, FieldDefinitionData } from "@/lib/types";
 import { CardItem } from "@/components/board/card-item";
 import { NewCardForm } from "@/components/board/new-card-form";
+import { FieldsManagerModal } from "@/components/board/fields-manager-modal";
 
 const ACCENTS = ["", "aero-button-lime", "aero-button-tangerine", "aero-button-grape", "aero-button-berry"];
 
@@ -30,8 +31,19 @@ export function ColumnView({
 }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(column.title);
+  const [managingFields, setManagingFields] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+
+  function setFieldDefinitions(update: SetStateAction<FieldDefinitionData[]>) {
+    onColumnsChange((prev) =>
+      prev.map((c) => {
+        if (c.id !== column.id) return c;
+        const next = typeof update === "function" ? (update as (p: FieldDefinitionData[]) => FieldDefinitionData[])(c.fieldDefinitions) : update;
+        return { ...c, fieldDefinitions: next };
+      }),
+    );
+  }
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
@@ -127,6 +139,18 @@ export function ColumnView({
         </span>
         <button
           type="button"
+          onClick={() => setManagingFields(true)}
+          aria-label="Campos desta fase"
+          title="Campos desta fase"
+          className="rounded-full p-1 text-black/40 hover:bg-black/10 hover:text-black/70 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
+        >
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M7 1.5V3M7 11V12.5M1.5 7H3M11 7H12.5M3.3 3.3L4.3 4.3M9.7 9.7L10.7 10.7M3.3 10.7L4.3 9.7M9.7 4.3L10.7 3.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.4" />
+          </svg>
+        </button>
+        <button
+          type="button"
           onClick={handleDelete}
           disabled={pending}
           aria-label="Excluir fase"
@@ -155,6 +179,16 @@ export function ColumnView({
           )
         }
       />
+
+      {managingFields ? (
+        <FieldsManagerModal
+          columnId={column.id}
+          columnTitle={column.title}
+          fieldDefinitions={column.fieldDefinitions}
+          onFieldDefinitionsChange={setFieldDefinitions}
+          onClose={() => setManagingFields(false)}
+        />
+      ) : null}
     </div>
   );
 }

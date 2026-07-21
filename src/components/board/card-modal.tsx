@@ -5,13 +5,17 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { deleteAttachment, deleteCard, updateCard, uploadAttachment } from "@/lib/actions";
 import type { AttachmentData, CardWithAttachments, ColumnWithCards } from "@/lib/types";
+import { CardFields } from "@/components/board/card-fields";
+import { CardHistoryEntry } from "@/components/board/card-history";
 
 export function CardModal({
   card,
+  columns,
   onClose,
   onColumnsChange,
 }: {
   card: CardWithAttachments;
+  columns: ColumnWithCards[];
   onClose: () => void;
   onColumnsChange: Dispatch<SetStateAction<ColumnWithCards[]>>;
 }) {
@@ -22,6 +26,17 @@ export function CardModal({
   const [pending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+  const currentColumn = columns.find((c) => c.id === card.columnId);
+  const currentFieldDefinitions = currentColumn?.fieldDefinitions ?? [];
+
+  const historyEntries = columns
+    .filter((c) => c.id !== card.columnId)
+    .map((c) => ({ column: c, values: card.fieldValues.filter((v) => v.fieldDefinition.columnId === c.id) }))
+    .filter((entry) => entry.values.length > 0);
+
+  const fieldAttachmentIds = new Set(card.fieldValues.flatMap((v) => (v.attachmentId ? [v.attachmentId] : [])));
+  const generalAttachments = card.attachments.filter((a) => !fieldAttachmentIds.has(a.id));
 
   function patchCard(patch: Partial<CardWithAttachments>) {
     onColumnsChange((prev) =>
@@ -113,106 +128,128 @@ export function CardModal({
       onClick={onClose}
     >
       <div
-        className="aero-glass aero-scroll max-h-[85dvh] w-full max-w-lg overflow-y-auto p-5"
+        className="aero-glass flex max-h-[85dvh] w-full max-w-3xl overflow-hidden p-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-start justify-between gap-3">
+        {historyEntries.length > 0 ? (
+          <div className="aero-scroll hidden w-60 shrink-0 flex-col gap-3 overflow-y-auto border-r border-white/40 p-4 sm:flex dark:border-white/10">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-black/50 dark:text-white/50">
+              Historico
+            </h3>
+            {historyEntries.map((entry) => (
+              <CardHistoryEntry key={entry.column.id} column={entry.column} values={entry.values} />
+            ))}
+          </div>
+        ) : null}
+
+        <div className="aero-scroll flex-1 overflow-y-auto p-5">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <input
+              className="aero-input flex-1 text-base font-bold"
+              value={title}
+              maxLength={120}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={saveTitle}
+            />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Fechar"
+              className="rounded-full p-2 text-black/50 hover:bg-black/10 dark:text-white/60 dark:hover:bg-white/10"
+            >
+              <svg width="14" height="14" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path d="M1.5 1.5L10.5 10.5M10.5 1.5L1.5 10.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+            Descricao
+          </label>
+          <textarea
+            className="aero-input mb-4 resize-none"
+            rows={4}
+            maxLength={2000}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onBlur={saveDescription}
+            placeholder="Adicione detalhes..."
+          />
+
+          {currentFieldDefinitions.length > 0 ? (
+            <>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+                Campos de &ldquo;{currentColumn?.title}&rdquo;
+              </label>
+              <CardFields card={card} fieldDefinitions={currentFieldDefinitions} patchCard={patchCard} />
+            </>
+          ) : null}
+
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+            Anexos
+          </label>
+          <div className="mb-3 grid grid-cols-3 gap-2">
+            {generalAttachments.map((attachment) => (
+              <div key={attachment.id} className="group relative aspect-square overflow-hidden rounded-lg border border-white/50">
+                {attachment.mimeType.startsWith("video/") ? (
+                  <video
+                    src={`/media/${attachment.filename}`}
+                    controls
+                    preload="metadata"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <Image
+                    src={`/media/${attachment.filename}`}
+                    alt={attachment.originalName}
+                    fill
+                    sizes="150px"
+                    className="object-cover"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleDeleteAttachment(attachment.id)}
+                  aria-label="Remover anexo"
+                  className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M1.5 1.5L10.5 10.5M10.5 1.5L1.5 10.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+
           <input
-            className="aero-input flex-1 text-base font-bold"
-            value={title}
-            maxLength={120}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={saveTitle}
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
+            className="hidden"
+            onChange={(e) => handleFileSelected(e.target.files)}
           />
           <button
             type="button"
-            onClick={onClose}
-            aria-label="Fechar"
-            className="rounded-full p-2 text-black/50 hover:bg-black/10 dark:text-white/60 dark:hover:bg-white/10"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="aero-button aero-button-lime mb-4 w-full justify-center"
           >
-            <svg width="14" height="14" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M1.5 1.5L10.5 10.5M10.5 1.5L1.5 10.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
+            {uploading ? "Enviando..." : "Anexar imagem ou video"}
+          </button>
+          <p className="-mt-3 mb-4 text-[11px] text-black/45 dark:text-white/45">
+            Imagens ate 5MB. Videos (mp4, webm, mov) ate 80MB.
+          </p>
+          {error ? <p className="mb-4 text-xs font-medium text-rose-600">{error}</p> : null}
+
+          <button
+            type="button"
+            onClick={handleDeleteCard}
+            disabled={pending}
+            className="aero-button aero-button-berry w-full justify-center"
+          >
+            Excluir card
           </button>
         </div>
-
-        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
-          Descricao
-        </label>
-        <textarea
-          className="aero-input mb-4 resize-none"
-          rows={4}
-          maxLength={2000}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          onBlur={saveDescription}
-          placeholder="Adicione detalhes..."
-        />
-
-        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
-          Anexos
-        </label>
-        <div className="mb-3 grid grid-cols-3 gap-2">
-          {card.attachments.map((attachment) => (
-            <div key={attachment.id} className="group relative aspect-square overflow-hidden rounded-lg border border-white/50">
-              {attachment.mimeType.startsWith("video/") ? (
-                <video
-                  src={`/media/${attachment.filename}`}
-                  controls
-                  preload="metadata"
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <Image
-                  src={`/media/${attachment.filename}`}
-                  alt={attachment.originalName}
-                  fill
-                  sizes="150px"
-                  className="object-cover"
-                />
-              )}
-              <button
-                type="button"
-                onClick={() => handleDeleteAttachment(attachment.id)}
-                aria-label="Remover anexo"
-                className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
-              >
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M1.5 1.5L10.5 10.5M10.5 1.5L1.5 10.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                </svg>
-              </button>
-            </div>
-          ))}
-        </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
-          className="hidden"
-          onChange={(e) => handleFileSelected(e.target.files)}
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="aero-button aero-button-lime mb-4 w-full justify-center"
-        >
-          {uploading ? "Enviando..." : "Anexar imagem ou video"}
-        </button>
-        <p className="-mt-3 mb-4 text-[11px] text-black/45 dark:text-white/45">
-          Imagens ate 5MB. Videos (mp4, webm, mov) ate 80MB.
-        </p>
-        {error ? <p className="mb-4 text-xs font-medium text-rose-600">{error}</p> : null}
-
-        <button
-          type="button"
-          onClick={handleDeleteCard}
-          disabled={pending}
-          className="aero-button aero-button-berry w-full justify-center"
-        >
-          Excluir card
-        </button>
       </div>
     </div>
   );

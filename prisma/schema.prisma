@@ -20,14 +20,15 @@ model Board {
 }
 
 model Column {
-  id        String   @id @default(cuid())
-  title     String
-  order     Int
-  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  boardId   String
-  cards     Card[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String            @id @default(cuid())
+  title            String
+  order            Int
+  board            Board             @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId          String
+  cards            Card[]
+  fieldDefinitions FieldDefinition[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@index([boardId, order])
 }
@@ -40,6 +41,7 @@ model Card {
   column      Column       @relation(fields: [columnId], references: [id], onDelete: Cascade)
   columnId    String
   attachments Attachment[]
+  fieldValues FieldValue[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -47,16 +49,59 @@ model Card {
 }
 
 model Attachment {
-  id           String   @id @default(cuid())
+  id           String      @id @default(cuid())
   filename     String
   originalName String
   mimeType     String
   size         Int
   width        Int?
   height       Int?
-  card         Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  card         Card        @relation(fields: [cardId], references: [id], onDelete: Cascade)
   cardId       String
-  createdAt    DateTime @default(now())
+  fieldValue   FieldValue?
+  createdAt    DateTime    @default(now())
 
+  @@index([cardId])
+}
+
+// A custom field defined on a column/stage (e.g. "Prioridade", a
+// single-choice field with options ["Baixa","Media","Alta"]). Applies to
+// every card while it sits in that column; values a card collected in a
+// previous column remain attached to it as read-only history after it
+// moves on, since FieldValue rows are never deleted on a move.
+model FieldDefinition {
+  id        String       @id @default(cuid())
+  column    Column       @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  columnId  String
+  label     String
+  // "short_text" | "long_text" | "attachment" | "single_choice" | "multi_choice"
+  type      String
+  // JSON-encoded string[]; only used by the choice field types.
+  options   String?
+  order     Int
+  values    FieldValue[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([columnId, order])
+}
+
+// One card's value for one field definition. Only the column matching the
+// field's type is populated (textValue for short/long text, choiceValue
+// (JSON-encoded string[]) for single/multi choice, attachment for the
+// attachment type).
+model FieldValue {
+  id                String          @id @default(cuid())
+  card              Card            @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId            String
+  fieldDefinition   FieldDefinition @relation(fields: [fieldDefinitionId], references: [id], onDelete: Cascade)
+  fieldDefinitionId String
+  textValue         String?
+  choiceValue       String?
+  attachment        Attachment?     @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+  attachmentId      String?         @unique
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([cardId, fieldDefinitionId])
   @@index([cardId])
 }

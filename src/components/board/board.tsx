@@ -179,6 +179,7 @@ export function Board({ boardId, initialColumns }: { boardId: string; initialCol
       {openCard ? (
         <CardModal
           card={openCard}
+          columns={columns}
           onClose={() => setOpenCardId(null)}
           onColumnsChange={setColumns}
         />

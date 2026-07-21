@@ -37,6 +37,7 @@ export function NewCardForm({
         order: 0,
         columnId,
         attachments: [],
+        fieldValues: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       });

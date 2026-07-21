@@ -28,7 +28,16 @@ export function NewColumnForm({
         setError(res.error);
         return;
       }
-      onCreated({ id: res.data.id, title: trimmed, order: 0, boardId, cards: [], createdAt: new Date(), updatedAt: new Date() });
+      onCreated({
+        id: res.data.id,
+        title: trimmed,
+        order: 0,
+        boardId,
+        cards: [],
+        fieldDefinitions: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
       setTitle("");
       setOpen(false);
       router.refresh();
