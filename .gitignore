@@ -46,6 +46,5 @@ next-env.d.ts
 /prisma/*.db
 /prisma/*.db-journal
 
-# user-uploaded content
-/public/uploads/*
-!/public/uploads/.gitkeep
+# local runtime data (sqlite db + uploaded media), mirrors the docker volume
+/data/

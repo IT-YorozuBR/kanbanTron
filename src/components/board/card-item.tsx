@@ -45,10 +45,10 @@ function CardBody({ card }: { card: CardWithAttachments }) {
       {cover ? (
         <div className="relative h-28 w-full overflow-hidden rounded-lg">
           {cover.mimeType.startsWith("video/") ? (
-            <video src={`/uploads/${cover.filename}`} muted preload="metadata" className="h-full w-full object-cover" />
+            <video src={`/media/${cover.filename}`} muted preload="metadata" className="h-full w-full object-cover" />
           ) : (
             <Image
-              src={`/uploads/${cover.filename}`}
+              src={`/media/${cover.filename}`}
               alt={cover.originalName}
               fill
               sizes="288px"

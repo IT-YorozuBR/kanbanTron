@@ -10,7 +10,10 @@ import {
   MAX_VIDEO_BYTES,
 } from "./validation";
 
-const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
+// Deliberately outside of /public: Next.js's production server only serves
+// files that existed in public/ at build time, not ones written at runtime.
+// Uploaded media is instead served through the /media/[filename] route handler.
+const UPLOAD_DIR = path.join(process.cwd(), "data", "uploads");
 
 export class MediaValidationError extends Error {}
 

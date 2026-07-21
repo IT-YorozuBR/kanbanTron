@@ -1,0 +1,18 @@
+node_modules
+.next
+.git
+.gitignore
+npm-debug.log*
+
+# local dev database and uploads: the container uses its own volume
+prisma/*.db
+prisma/*.db-journal
+dev.db
+dev.db-journal
+data/
+
+# env files: pass configuration via docker-compose environment instead
+.env
+.env.*
+
+README.md

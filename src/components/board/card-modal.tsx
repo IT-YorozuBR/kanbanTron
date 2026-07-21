@@ -157,14 +157,14 @@ export function CardModal({
             <div key={attachment.id} className="group relative aspect-square overflow-hidden rounded-lg border border-white/50">
               {attachment.mimeType.startsWith("video/") ? (
                 <video
-                  src={`/uploads/${attachment.filename}`}
+                  src={`/media/${attachment.filename}`}
                   controls
                   preload="metadata"
                   className="h-full w-full object-cover"
                 />
               ) : (
                 <Image
-                  src={`/uploads/${attachment.filename}`}
+                  src={`/media/${attachment.filename}`}
                   alt={attachment.originalName}
                   fill
                   sizes="150px"
