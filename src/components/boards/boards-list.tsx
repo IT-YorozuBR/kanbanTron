@@ -7,11 +7,20 @@ import { ACCENT_OPTIONS, DEFAULT_ACCENT, accentSwatchVar, type AccentId } from "
 import type { BoardSummary } from "@/lib/types";
 import { BoardCard } from "@/components/boards/board-card";
 
-export function BoardsList({ initialBoards }: { initialBoards: BoardSummary[] }) {
+export function BoardsList({
+  initialBoards,
+  sectors,
+  currentUser,
+}: {
+  initialBoards: BoardSummary[];
+  sectors: { id: string; name: string }[] | null;
+  currentUser: { id: string; role: string };
+}) {
   const [boards, setBoards] = useState(initialBoards);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [accent, setAccent] = useState<AccentId>(DEFAULT_ACCENT);
+  const [sectorId, setSectorId] = useState(sectors?.[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -19,9 +28,13 @@ export function BoardsList({ initialBoards }: { initialBoards: BoardSummary[] })
   function handleCreate() {
     const trimmed = title.trim();
     if (!trimmed) return;
+    if (sectors && !sectorId) {
+      setError("Selecione um setor.");
+      return;
+    }
     setError(null);
     startTransition(async () => {
-      const res = await createBoard({ title: trimmed, accent });
+      const res = await createBoard({ title: trimmed, accent, sectorId: sectors ? sectorId : undefined });
       if (!res.ok) {
         setError(res.error);
         return;
@@ -37,7 +50,12 @@ export function BoardsList({ initialBoards }: { initialBoards: BoardSummary[] })
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {boards.map((board) => (
-        <BoardCard key={board.id} board={board} onDeleted={handleDeleted} />
+        <BoardCard
+          key={board.id}
+          board={board}
+          onDeleted={handleDeleted}
+          canDelete={currentUser.role === "admin" || board.createdById === currentUser.id}
+        />
       ))}
 
       {creating ? (
@@ -54,6 +72,18 @@ export function BoardsList({ initialBoards }: { initialBoards: BoardSummary[] })
               if (e.key === "Escape") setCreating(false);
             }}
           />
+          {sectors ? (
+            <select className="aero-input" value={sectorId} onChange={(e) => setSectorId(e.target.value)}>
+              <option value="" disabled>
+                Selecione um setor
+              </option>
+              {sectors.map((sector) => (
+                <option key={sector.id} value={sector.id}>
+                  {sector.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
           <div className="flex items-center gap-1.5" role="group" aria-label="Cor do quadro">
             {ACCENT_OPTIONS.map((option) => (
               <button

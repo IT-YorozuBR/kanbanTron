@@ -115,9 +115,12 @@ export function NewCardModal({
         }),
       ]);
 
+      const titleField = fieldDefinitions.find((f) => f.isTitleField);
+      const titleOverride = titleField ? textValues[titleField.id]?.trim() : undefined;
+
       onCreated({
         id: cardId,
-        title: created.data.title,
+        title: titleOverride || created.data.title,
         order: 0,
         columnId,
         attachments: [],

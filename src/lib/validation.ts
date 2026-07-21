@@ -6,6 +6,9 @@ const accent = z.enum(["blue", "lime", "tangerine", "grape", "berry"]);
 export const createBoardSchema = z.object({
   title: z.string().trim().min(1, "Informe um titulo").max(60),
   accent,
+  // Only honored for admins (who must pick a sector); ignored for members,
+  // who always get their own session sector.
+  sectorId: cuid.optional(),
 });
 
 export const updateBoardSchema = z.object({
@@ -67,16 +70,22 @@ export const createFieldDefinitionSchema = z
     label: z.string().trim().min(1, "Informe um nome").max(60),
     type: fieldType,
     options: z.array(fieldOption).max(30).optional(),
+    isTitleField: z.boolean().optional(),
   })
   .refine(
     (data) => (data.type === "single_choice" || data.type === "multi_choice" ? (data.options?.length ?? 0) >= 2 : true),
     { message: "Adicione ao menos 2 opcoes", path: ["options"] },
-  );
+  )
+  .refine((data) => (data.isTitleField ? data.type === "short_text" || data.type === "long_text" : true), {
+    message: "Somente campos de texto podem ser o titulo do card",
+    path: ["isTitleField"],
+  });
 
 export const updateFieldDefinitionSchema = z.object({
   fieldDefinitionId: cuid,
   label: z.string().trim().min(1, "Informe um nome").max(60).optional(),
   options: z.array(fieldOption).max(30).optional(),
+  isTitleField: z.boolean().optional(),
 });
 
 export const deleteFieldDefinitionSchema = z.object({

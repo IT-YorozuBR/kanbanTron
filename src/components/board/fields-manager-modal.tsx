@@ -38,11 +38,13 @@ export function FieldsManagerModal({
   const [newLabel, setNewLabel] = useState("");
   const [newType, setNewType] = useState<FieldType>("short_text");
   const [newOptions, setNewOptions] = useState("");
+  const [newIsTitleField, setNewIsTitleField] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
   const isChoiceType = newType === "single_choice" || newType === "multi_choice";
+  const isTextType = newType === "short_text" || newType === "long_text";
 
   function handleCreate() {
     const label = newLabel.trim();
@@ -51,6 +53,7 @@ export function FieldsManagerModal({
       .split(",")
       .map((o) => o.trim())
       .filter(Boolean);
+    const isTitleField = isTextType && newIsTitleField;
 
     setError(null);
     startTransition(async () => {
@@ -59,19 +62,21 @@ export function FieldsManagerModal({
         label,
         type: newType,
         options: isChoiceType ? options : undefined,
+        isTitleField,
       });
       if (!res.ok) {
         setError(res.error);
         return;
       }
       onFieldDefinitionsChange((prev) => [
-        ...prev,
+        ...prev.map((f) => (isTitleField ? { ...f, isTitleField: false } : f)),
         {
           id: res.data.id,
           columnId,
           label,
           type: newType,
           options: isChoiceType ? JSON.stringify(options) : null,
+          isTitleField,
           order: prev.length,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -80,6 +85,7 @@ export function FieldsManagerModal({
       setNewLabel("");
       setNewOptions("");
       setNewType("short_text");
+      setNewIsTitleField(false);
       setAdding(false);
       router.refresh();
     });
@@ -105,6 +111,19 @@ export function FieldsManagerModal({
     );
     startTransition(async () => {
       const res = await updateFieldDefinition({ fieldDefinitionId: field.id, options });
+      if (!res.ok) router.refresh();
+    });
+  }
+
+  function handleTitleFieldToggle(field: FieldDefinitionData, checked: boolean) {
+    onFieldDefinitionsChange((prev) =>
+      prev.map((f) => {
+        if (f.id === field.id) return { ...f, isTitleField: checked };
+        return checked ? { ...f, isTitleField: false } : f;
+      }),
+    );
+    startTransition(async () => {
+      const res = await updateFieldDefinition({ fieldDefinitionId: field.id, isTitleField: checked });
       if (!res.ok) router.refresh();
     });
   }
@@ -215,6 +234,16 @@ export function FieldsManagerModal({
                   onBlur={(e) => handleOptionsChange(field, e.target.value)}
                 />
               )}
+              {(field.type === "short_text" || field.type === "long_text") && (
+                <label className="flex items-center gap-1.5 text-xs text-black/60 dark:text-white/60">
+                  <input
+                    type="checkbox"
+                    checked={field.isTitleField}
+                    onChange={(e) => handleTitleFieldToggle(field, e.target.checked)}
+                  />
+                  Usar como titulo do card
+                </label>
+              )}
             </div>
           ))}
           {fieldDefinitions.length === 0 && !adding ? (
@@ -250,6 +279,16 @@ export function FieldsManagerModal({
                 value={newOptions}
                 onChange={(e) => setNewOptions(e.target.value)}
               />
+            ) : null}
+            {isTextType ? (
+              <label className="flex items-center gap-1.5 text-xs text-black/60 dark:text-white/60">
+                <input
+                  type="checkbox"
+                  checked={newIsTitleField}
+                  onChange={(e) => setNewIsTitleField(e.target.checked)}
+                />
+                Usar como titulo do card
+              </label>
             ) : null}
             {error ? <p className="text-xs font-medium text-rose-600">{error}</p> : null}
             <div className="flex gap-2">

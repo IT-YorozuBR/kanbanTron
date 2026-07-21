@@ -10,13 +10,59 @@ datasource db {
   provider = "sqlite"
 }
 
+// A department/team. Every board belongs to exactly one sector; members can
+// only see and manage boards in their own sector, while admins see all.
+model Sector {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  users     User[]
+  boards    Board[]
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  // "admin" | "member". Admins have no sector and see everything; members
+  // are scoped to exactly one sector.
+  role          String
+  sector        Sector?   @relation(fields: [sectorId], references: [id], onDelete: Restrict)
+  sectorId      String?
+  sessions      Session[]
+  createdBoards Board[]
+  createdAt     DateTime  @default(now())
+}
+
+// The cookie holds `token` (a random opaque value), never the row id, so a
+// leaked/guessed database id can't be used to impersonate a session.
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
 model Board {
   id        String   @id @default(cuid())
   title     String
   accent    String   @default("blue")
+  sector    Sector   @relation(fields: [sectorId], references: [id], onDelete: Cascade)
+  sectorId  String
+  // Nullable so a deleted user doesn't take their old boards down with them
+  // (onDelete: SetNull) — a board with no creator can only be deleted by an
+  // admin, never "adopted" by another member.
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
   columns   Column[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([sectorId])
 }
 
 model Column {
@@ -71,18 +117,22 @@ model Attachment {
 // previous column remain attached to it as read-only history after it
 // moves on, since FieldValue rows are never deleted on a move.
 model FieldDefinition {
-  id        String       @id @default(cuid())
-  column    Column       @relation(fields: [columnId], references: [id], onDelete: Cascade)
-  columnId  String
-  label     String
+  id           String       @id @default(cuid())
+  column       Column       @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  columnId     String
+  label        String
   // "short_text" | "long_text" | "attachment" | "single_choice" | "multi_choice"
-  type      String
+  type         String
   // JSON-encoded string[]; only used by the choice field types.
-  options   String?
-  order     Int
-  values    FieldValue[]
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  options      String?
+  // Only valid for short_text/long_text fields. At most one per column;
+  // whenever this field's value is set, it is copied onto Card.title so the
+  // title keeps showing even after the card leaves this column.
+  isTitleField Boolean      @default(false)
+  order        Int
+  values       FieldValue[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   @@index([columnId, order])
 }

@@ -6,7 +6,15 @@ import { useRouter } from "next/navigation";
 import { deleteBoard, updateBoard } from "@/lib/actions";
 import { ACCENT_OPTIONS, accentSwatchVar, type AccentId } from "@/lib/theme";
 
-export function BoardHeader({ board }: { board: { id: string; title: string; accent: string } }) {
+export function BoardHeader({
+  board,
+  canDelete,
+  children,
+}: {
+  board: { id: string; title: string; accent: string };
+  canDelete: boolean;
+  children?: React.ReactNode;
+}) {
   const [title, setTitle] = useState(board.title);
   const [accent, setAccent] = useState(board.accent);
   const [editing, setEditing] = useState(false);
@@ -106,14 +114,17 @@ export function BoardHeader({ board }: { board: { id: string; title: string; acc
             />
           ))}
         </div>
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={pending}
-          className="aero-button aero-button-berry text-xs"
-        >
-          Excluir quadro
-        </button>
+        {canDelete ? (
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={pending}
+            className="aero-button aero-button-berry text-xs"
+          >
+            Excluir quadro
+          </button>
+        ) : null}
+        {children}
       </div>
     </header>
   );

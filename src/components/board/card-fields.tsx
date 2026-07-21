@@ -36,10 +36,12 @@ export function CardFields({
   card,
   fieldDefinitions,
   patchCard,
+  onOpenAttachment,
 }: {
   card: CardWithAttachments;
   fieldDefinitions: FieldDefinitionData[];
   patchCard: (patch: Partial<CardWithAttachments>) => void;
+  onOpenAttachment: (attachment: AttachmentData) => void;
 }) {
   const router = useRouter();
 
@@ -52,7 +54,11 @@ export function CardFields({
   function handleTextChange(field: FieldDefinitionData, value: string) {
     patchCard({ fieldValues: upsertValue(card.fieldValues, field, { textValue: value }) });
     setTextFieldValue({ cardId: card.id, fieldDefinitionId: field.id, value }).then((res) => {
-      if (!res.ok) router.refresh();
+      if (!res.ok) {
+        router.refresh();
+        return;
+      }
+      if (res.data.title) patchCard({ title: res.data.title });
     });
   }
 
@@ -76,6 +82,7 @@ export function CardFields({
           onTextChange={(value) => handleTextChange(field, value)}
           onChoiceChange={(selected) => handleChoiceChange(field, selected)}
           patchCard={patchCard}
+          onOpenAttachment={onOpenAttachment}
         />
       ))}
     </div>
@@ -89,6 +96,7 @@ function FieldInput({
   onTextChange,
   onChoiceChange,
   patchCard,
+  onOpenAttachment,
 }: {
   card: CardWithAttachments;
   field: FieldDefinitionData;
@@ -96,6 +104,7 @@ function FieldInput({
   onTextChange: (value: string) => void;
   onChoiceChange: (selected: string[]) => void;
   patchCard: (patch: Partial<CardWithAttachments>) => void;
+  onOpenAttachment: (attachment: AttachmentData) => void;
 }) {
   const type = field.type as FieldType;
   const options = decodeOptions(field.options);
@@ -161,6 +170,9 @@ function FieldInput({
     <div>
       <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
         {field.label}
+        {field.isTitleField ? (
+          <span className="ml-1 normal-case text-black/40 dark:text-white/40">(titulo do card)</span>
+        ) : null}
       </label>
 
       {type === "short_text" ? (
@@ -224,15 +236,23 @@ function FieldInput({
               {attachments.map((attachment) => (
                 <div
                   key={attachment.id}
-                  className="group relative aspect-square overflow-hidden rounded-lg border border-white/50"
+                  onClick={() => onOpenAttachment(attachment)}
+                  className="group relative aspect-square cursor-pointer overflow-hidden rounded-lg border border-white/50"
                 >
                   {attachment.mimeType.startsWith("video/") ? (
-                    <video
-                      src={`/media/${attachment.filename}`}
-                      muted
-                      preload="metadata"
-                      className="h-full w-full object-cover"
-                    />
+                    <>
+                      <video
+                        src={`/media/${attachment.filename}`}
+                        muted
+                        preload="metadata"
+                        className="h-full w-full object-cover"
+                      />
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20">
+                        <svg width="22" height="22" viewBox="0 0 16 16" fill="white" aria-hidden="true">
+                          <path d="M4 2.5v11l10-5.5-10-5.5Z" />
+                        </svg>
+                      </div>
+                    </>
                   ) : (
                     <Image
                       src={`/media/${attachment.filename}`}
@@ -244,7 +264,10 @@ function FieldInput({
                   )}
                   <button
                     type="button"
-                    onClick={() => handleRemoveAttachment(attachment.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveAttachment(attachment.id);
+                    }}
                     aria-label="Remover anexo"
                     className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
                   >

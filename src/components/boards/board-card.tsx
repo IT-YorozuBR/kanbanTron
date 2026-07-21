@@ -10,9 +10,11 @@ import type { BoardSummary } from "@/lib/types";
 export function BoardCard({
   board,
   onDeleted,
+  canDelete,
 }: {
   board: BoardSummary;
   onDeleted: (boardId: string) => void;
+  canDelete: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -41,17 +43,22 @@ export function BoardCard({
           {board.columnCount} {board.columnCount === 1 ? "fase" : "fases"} · {board.cardCount}{" "}
           {board.cardCount === 1 ? "card" : "cards"}
         </p>
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={pending}
-          aria-label="Excluir quadro"
-          className="absolute right-3 top-3 rounded-full p-1.5 text-black/35 opacity-0 transition-opacity hover:bg-black/10 hover:text-black/70 group-hover:opacity-100 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M1.5 1.5L10.5 10.5M10.5 1.5L1.5 10.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </button>
+        <span className="w-fit rounded-full bg-black/5 px-2 py-0.5 text-[11px] font-medium text-black/60 dark:bg-white/10 dark:text-white/60">
+          {board.sectorName}
+        </span>
+        {canDelete ? (
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={pending}
+            aria-label="Excluir quadro"
+            className="absolute right-3 top-3 rounded-full p-1.5 text-black/35 opacity-0 transition-opacity hover:bg-black/10 hover:text-black/70 group-hover:opacity-100 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M1.5 1.5L10.5 10.5M10.5 1.5L1.5 10.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+          </button>
+        ) : null}
       </div>
     </Link>
   );
