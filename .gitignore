@@ -45,6 +45,8 @@ next-env.d.ts
 # database
 /prisma/*.db
 /prisma/*.db-journal
+/dev.db
+/dev.db-journal
 
 # local runtime data (sqlite db + uploaded media), mirrors the docker volume
 /data/

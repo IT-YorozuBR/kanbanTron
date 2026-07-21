@@ -10,7 +10,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 COPY . .
 RUN npx prisma generate
@@ -35,6 +35,10 @@ RUN apt-get update \
 ENV NODE_ENV=production
 ENV PORT=3000
 
+# node_modules/.next/public/prisma only need to be *readable* by the runtime
+# user, so they're left root-owned (fast: no ownership walk over the tree).
+# --chown here applies ownership as part of the copy itself instead of a
+# separate recursive chown pass afterwards, which is what made this step slow.
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
@@ -42,11 +46,14 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/next.config.ts ./next.config.ts
 COPY --from=builder /app/package.json ./package.json
-COPY docker-entrypoint.sh ./docker-entrypoint.sh
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
 
+# Only /app/data needs to be writable by the runtime user (it's the volume
+# mount point for the sqlite db + uploaded media); it's small/empty here so
+# chown on it is instant.
 RUN chmod +x ./docker-entrypoint.sh \
     && mkdir -p /app/data/uploads \
-    && chown -R nextjs:nodejs /app
+    && chown -R nextjs:nodejs /app/data
 
 USER nextjs
 EXPOSE 3000
