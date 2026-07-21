@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { deleteFieldAttachment, setChoiceFieldValue, setTextFieldValue, uploadFieldAttachment } from "@/lib/actions";
 import { decodeOptions } from "@/lib/field-options";
-import type { CardWithAttachments, FieldDefinitionData, FieldType, FieldValueData } from "@/lib/types";
+import type { AttachmentData, CardWithAttachments, FieldDefinitionData, FieldType, FieldValueData } from "@/lib/types";
 
 function upsertValue(
   values: FieldValueData[],
@@ -25,8 +25,7 @@ function upsertValue(
       fieldDefinition,
       textValue: null,
       choiceValue: null,
-      attachmentId: null,
-      attachment: null,
+      attachments: [],
       updatedAt: new Date(),
       ...patch,
     } as FieldValueData,
@@ -107,49 +106,53 @@ function FieldInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  async function handleFileSelected(files: FileList | null) {
-    const file = files?.[0];
-    if (!file) return;
+  const attachments = value?.attachments ?? [];
+
+  async function handleFilesSelected(files: FileList | null) {
+    if (!files || files.length === 0) return;
     setError(null);
     setUploading(true);
 
-    const formData = new FormData();
-    formData.set("cardId", card.id);
-    formData.set("fieldDefinitionId", field.id);
-    formData.set("file", file);
+    let current = attachments;
+    for (const file of Array.from(files)) {
+      const formData = new FormData();
+      formData.set("cardId", card.id);
+      formData.set("fieldDefinitionId", field.id);
+      formData.set("file", file);
 
-    const res = await uploadFieldAttachment(formData);
-    setUploading(false);
+      const res = await uploadFieldAttachment(formData);
+      if (!res.ok) {
+        setError(res.error);
+        continue;
+      }
 
-    if (!res.ok) {
-      setError(res.error);
-      return;
+      const newAttachment: AttachmentData = {
+        id: res.data.id,
+        filename: res.data.filename,
+        originalName: file.name,
+        mimeType: file.type.startsWith("video/") ? file.type : "image/webp",
+        size: 0,
+        width: null,
+        height: null,
+        cardId: card.id,
+        fieldValueId: null,
+        createdAt: new Date(),
+      };
+      current = [...current, newAttachment];
+      patchCard({ fieldValues: upsertValue(card.fieldValues, field, { attachments: current }) });
     }
 
-    patchCard({
-      fieldValues: upsertValue(card.fieldValues, field, {
-        attachmentId: res.data.id,
-        attachment: {
-          id: res.data.id,
-          filename: res.data.filename,
-          originalName: file.name,
-          mimeType: file.type.startsWith("video/") ? file.type : "image/webp",
-          size: 0,
-          width: null,
-          height: null,
-          cardId: card.id,
-          createdAt: new Date(),
-        },
-      }),
-    });
+    setUploading(false);
     router.refresh();
   }
 
-  function handleRemoveAttachment() {
+  function handleRemoveAttachment(attachmentId: string) {
     patchCard({
-      fieldValues: upsertValue(card.fieldValues, field, { attachmentId: null, attachment: null }),
+      fieldValues: upsertValue(card.fieldValues, field, {
+        attachments: attachments.filter((a) => a.id !== attachmentId),
+      }),
     });
-    deleteFieldAttachment({ cardId: card.id, fieldDefinitionId: field.id }).then((res) => {
+    deleteFieldAttachment({ attachmentId }).then((res) => {
       if (!res.ok) router.refresh();
     });
   }
@@ -216,37 +219,53 @@ function FieldInput({
 
       {type === "attachment" ? (
         <div>
-          {value?.attachment ? (
-            <div className="group relative mb-2 h-28 w-28 overflow-hidden rounded-lg border border-white/50">
-              {value.attachment.mimeType.startsWith("video/") ? (
-                <video src={`/media/${value.attachment.filename}`} muted preload="metadata" className="h-full w-full object-cover" />
-              ) : (
-                <Image
-                  src={`/media/${value.attachment.filename}`}
-                  alt={value.attachment.originalName}
-                  fill
-                  sizes="112px"
-                  className="object-cover"
-                />
-              )}
-              <button
-                type="button"
-                onClick={handleRemoveAttachment}
-                aria-label="Remover anexo"
-                className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
-              >
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M1.5 1.5L10.5 10.5M10.5 1.5L1.5 10.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                </svg>
-              </button>
+          {attachments.length > 0 ? (
+            <div className="mb-2 grid grid-cols-3 gap-2">
+              {attachments.map((attachment) => (
+                <div
+                  key={attachment.id}
+                  className="group relative aspect-square overflow-hidden rounded-lg border border-white/50"
+                >
+                  {attachment.mimeType.startsWith("video/") ? (
+                    <video
+                      src={`/media/${attachment.filename}`}
+                      muted
+                      preload="metadata"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <Image
+                      src={`/media/${attachment.filename}`}
+                      alt={attachment.originalName}
+                      fill
+                      sizes="112px"
+                      className="object-cover"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAttachment(attachment.id)}
+                    aria-label="Remover anexo"
+                    className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M1.5 1.5L10.5 10.5M10.5 1.5L1.5 10.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
             </div>
           ) : null}
           <input
             ref={fileInputRef}
             type="file"
+            multiple
             accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
             className="hidden"
-            onChange={(e) => handleFileSelected(e.target.files)}
+            onChange={(e) => {
+              handleFilesSelected(e.target.files);
+              e.target.value = "";
+            }}
           />
           <button
             type="button"
@@ -254,7 +273,7 @@ function FieldInput({
             disabled={uploading}
             className="aero-button aero-button-ghost text-xs"
           >
-            {uploading ? "Enviando..." : value?.attachment ? "Substituir arquivo" : "Anexar arquivo"}
+            {uploading ? "Enviando..." : "Anexar arquivo"}
           </button>
           {error ? <p className="mt-1 text-xs font-medium text-rose-600">{error}</p> : null}
         </div>

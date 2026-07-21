@@ -39,14 +39,12 @@ export const reorderColumnsSchema = z.object({
 
 export const createCardSchema = z.object({
   columnId: cuid,
-  title: z.string().trim().min(1, "Informe um titulo").max(120),
-  description: z.string().trim().max(2000).optional().or(z.literal("")),
+  title: z.string().trim().max(120).optional(),
 });
 
 export const updateCardSchema = z.object({
   cardId: cuid,
-  title: z.string().trim().min(1).max(120).optional(),
-  description: z.string().trim().max(2000).optional().or(z.literal("")),
+  title: z.string().trim().min(1).max(120),
 });
 
 export const deleteCardSchema = z.object({
@@ -57,10 +55,6 @@ export const moveCardSchema = z.object({
   cardId: cuid,
   toColumnId: cuid,
   orderedCardIds: z.array(cuid).min(1).max(2000),
-});
-
-export const deleteAttachmentSchema = z.object({
-  attachmentId: cuid,
 });
 
 export const FIELD_TYPES = ["short_text", "long_text", "attachment", "single_choice", "multi_choice"] as const;
@@ -107,8 +101,7 @@ export const setChoiceFieldValueSchema = z.object({
 });
 
 export const deleteFieldAttachmentSchema = z.object({
-  cardId: cuid,
-  fieldDefinitionId: cuid,
+  attachmentId: cuid,
 });
 
 // Media upload constraints

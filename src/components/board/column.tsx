@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { deleteColumn, renameColumn } from "@/lib/actions";
 import type { ColumnWithCards, FieldDefinitionData } from "@/lib/types";
 import { CardItem } from "@/components/board/card-item";
-import { NewCardForm } from "@/components/board/new-card-form";
+import { NewCardModal } from "@/components/board/new-card-modal";
 import { FieldsManagerModal } from "@/components/board/fields-manager-modal";
 
 const ACCENTS = ["", "aero-button-lime", "aero-button-tangerine", "aero-button-grape", "aero-button-berry"];
@@ -32,6 +32,7 @@ export function ColumnView({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(column.title);
   const [managingFields, setManagingFields] = useState(false);
+  const [creatingCard, setCreatingCard] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -170,15 +171,16 @@ export function ColumnView({
         </SortableContext>
       </div>
 
-      <NewCardForm
-        columnId={column.id}
-        accent={accent}
-        onCreated={(card) =>
-          onColumnsChange((prev) =>
-            prev.map((c) => (c.id === column.id ? { ...c, cards: [...c.cards, card] } : c)),
-          )
-        }
-      />
+      <button
+        type="button"
+        onClick={() => setCreatingCard(true)}
+        className={`aero-button aero-button-ghost ${accent} justify-center text-xs`}
+      >
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="M7 1.5V12.5M1.5 7H12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+        Novo card
+      </button>
 
       {managingFields ? (
         <FieldsManagerModal
@@ -187,6 +189,19 @@ export function ColumnView({
           fieldDefinitions={column.fieldDefinitions}
           onFieldDefinitionsChange={setFieldDefinitions}
           onClose={() => setManagingFields(false)}
+        />
+      ) : null}
+
+      {creatingCard ? (
+        <NewCardModal
+          columnId={column.id}
+          fieldDefinitions={column.fieldDefinitions}
+          onClose={() => setCreatingCard(false)}
+          onCreated={(card) =>
+            onColumnsChange((prev) =>
+              prev.map((c) => (c.id === column.id ? { ...c, cards: [...c.cards, card] } : c)),
+            )
+          }
         />
       ) : null}
     </div>

@@ -44,13 +44,17 @@ function HistoryValue({ value }: { value: FieldValueData }) {
           ))}
         </div>
       )}
-      {type === "attachment" && value.attachment ? (
-        <div className="relative mt-1 h-16 w-16 overflow-hidden rounded-lg border border-white/50">
-          {value.attachment.mimeType.startsWith("video/") ? (
-            <video src={`/media/${value.attachment.filename}`} muted preload="metadata" className="h-full w-full object-cover" />
-          ) : (
-            <Image src={`/media/${value.attachment.filename}`} alt={value.attachment.originalName} fill sizes="64px" className="object-cover" />
-          )}
+      {type === "attachment" && value.attachments.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {value.attachments.map((attachment) => (
+            <div key={attachment.id} className="relative mt-1 h-16 w-16 overflow-hidden rounded-lg border border-white/50">
+              {attachment.mimeType.startsWith("video/") ? (
+                <video src={`/media/${attachment.filename}`} muted preload="metadata" className="h-full w-full object-cover" />
+              ) : (
+                <Image src={`/media/${attachment.filename}`} alt={attachment.originalName} fill sizes="64px" className="object-cover" />
+              )}
+            </div>
+          ))}
         </div>
       ) : null}
     </div>

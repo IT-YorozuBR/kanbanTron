@@ -58,9 +58,6 @@ function CardBody({ card }: { card: CardWithAttachments }) {
         </div>
       ) : null}
       <p className="text-sm font-semibold leading-snug">{card.title}</p>
-      {card.description ? (
-        <p className="line-clamp-2 text-xs text-black/60 dark:text-white/60">{card.description}</p>
-      ) : null}
       {card.attachments.length > 0 ? (
         <span className="inline-flex w-fit items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-[11px] font-medium text-black/60 dark:bg-white/10 dark:text-white/60">
           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">

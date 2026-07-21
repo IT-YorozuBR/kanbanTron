@@ -11,7 +11,6 @@ import {
   createCardSchema,
   createColumnSchema,
   createFieldDefinitionSchema,
-  deleteAttachmentSchema,
   deleteBoardSchema,
   deleteCardSchema,
   deleteColumnSchema,
@@ -69,7 +68,9 @@ export async function getBoard(boardId: string) {
             orderBy: { order: "asc" },
             include: {
               attachments: { orderBy: { createdAt: "asc" } },
-              fieldValues: { include: { attachment: true, fieldDefinition: true } },
+              fieldValues: {
+                include: { attachments: { orderBy: { createdAt: "asc" } }, fieldDefinition: true },
+              },
             },
           },
         },
@@ -197,27 +198,22 @@ export async function deleteColumn(input: unknown): Promise<ActionResult> {
     where: { id: parsed.data.columnId },
     include: {
       cards: { include: { attachments: true } },
-      fieldDefinitions: { include: { values: { include: { attachment: true } } } },
+      fieldDefinitions: { include: { values: { include: { attachments: true } } } },
     },
   });
   if (!column) return fail("Fase nao encontrada.");
 
   // Cards in this column cascade-delete along with it, taking their
-  // attachments with them. But this column's field definitions can hold
+  // attachments with them. This column's field definitions can also hold
   // values (kept as history) on cards that have since moved to OTHER
-  // columns, so those attachments need to be cleaned up explicitly.
-  const fieldAttachments = column.fieldDefinitions.flatMap((f) =>
-    f.values.flatMap((v) => (v.attachment ? [v.attachment] : [])),
-  );
+  // columns; those cascade too (Column -> FieldDefinition -> FieldValue ->
+  // Attachment), but the filenames must be collected before the delete.
   const filenames = new Set([
     ...column.cards.flatMap((c) => c.attachments.map((a) => a.filename)),
-    ...fieldAttachments.map((a) => a.filename),
+    ...column.fieldDefinitions.flatMap((f) => f.values.flatMap((v) => v.attachments.map((a) => a.filename))),
   ]);
 
-  await prisma.$transaction([
-    prisma.attachment.deleteMany({ where: { id: { in: fieldAttachments.map((a) => a.id) } } }),
-    prisma.column.delete({ where: { id: parsed.data.columnId } }),
-  ]);
+  await prisma.column.delete({ where: { id: parsed.data.columnId } });
   await Promise.all([...filenames].map(deleteMediaFile));
 
   return { ok: true, data: undefined };
@@ -312,21 +308,15 @@ export async function deleteFieldDefinition(input: unknown): Promise<ActionResul
 
   const field = await prisma.fieldDefinition.findUnique({
     where: { id: parsed.data.fieldDefinitionId },
-    include: { column: true, values: { include: { attachment: true } } },
+    include: { column: true, values: { include: { attachments: true } } },
   });
   if (!field) return fail("Campo nao encontrado.");
 
-  const attachments = field.values.flatMap((v) => (v.attachment ? [v.attachment] : []));
-
-  // FieldValue rows cascade-delete with the field definition, but the
-  // Attachment rows they pointed to don't (Attachment -> FieldValue is the
-  // owning side), so they'd otherwise be left as orphaned DB rows pointing
-  // at files we're about to delete from disk.
-  await prisma.$transaction([
-    prisma.attachment.deleteMany({ where: { id: { in: attachments.map((a) => a.id) } } }),
-    prisma.fieldDefinition.delete({ where: { id: parsed.data.fieldDefinitionId } }),
-  ]);
-  await Promise.all(attachments.map((a) => deleteMediaFile(a.filename)));
+  // FieldValue and Attachment rows cascade-delete along with the field
+  // definition; filenames must be collected before the delete happens.
+  const filenames = field.values.flatMap((v) => v.attachments.map((a) => a.filename));
+  await prisma.fieldDefinition.delete({ where: { id: parsed.data.fieldDefinitionId } });
+  await Promise.all(filenames.map(deleteMediaFile));
 
   revalidatePath(`/boards/${field.column.boardId}`);
   return { ok: true, data: undefined };
@@ -426,19 +416,24 @@ export async function uploadFieldAttachment(
 
   const [card, field] = await Promise.all([
     prisma.card.findUnique({ where: { id: cardId } }),
-    prisma.fieldDefinition.findUnique({
-      where: { id: fieldDefinitionId },
-      include: { values: { where: { cardId }, include: { attachment: true } } },
-    }),
+    prisma.fieldDefinition.findUnique({ where: { id: fieldDefinitionId } }),
   ]);
   if (!card) return fail("Card nao encontrado.");
   if (!field || field.type !== "attachment") return fail("Campo invalido.");
 
   try {
     const stored = await storeMediaAttachment(file);
+
+    const fieldValue = await prisma.fieldValue.upsert({
+      where: { cardId_fieldDefinitionId: { cardId, fieldDefinitionId } },
+      create: { cardId, fieldDefinitionId },
+      update: {},
+    });
+
     const attachment = await prisma.attachment.create({
       data: {
         cardId,
+        fieldValueId: fieldValue.id,
         filename: stored.filename,
         originalName: file.name.slice(0, 200),
         mimeType: stored.mimeType,
@@ -447,19 +442,6 @@ export async function uploadFieldAttachment(
         height: stored.height,
       },
     });
-
-    const previous = field.values[0];
-
-    await prisma.fieldValue.upsert({
-      where: { cardId_fieldDefinitionId: { cardId, fieldDefinitionId } },
-      create: { cardId, fieldDefinitionId, attachmentId: attachment.id },
-      update: { attachmentId: attachment.id },
-    });
-
-    if (previous?.attachment) {
-      await prisma.attachment.delete({ where: { id: previous.attachment.id } });
-      await deleteMediaFile(previous.attachment.filename);
-    }
 
     return { ok: true, data: { id: attachment.id, filename: attachment.filename } };
   } catch (error) {
@@ -475,21 +457,16 @@ export async function deleteFieldAttachment(input: unknown): Promise<ActionResul
   const parsed = deleteFieldAttachmentSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
 
-  const value = await prisma.fieldValue.findUnique({
-    where: {
-      cardId_fieldDefinitionId: { cardId: parsed.data.cardId, fieldDefinitionId: parsed.data.fieldDefinitionId },
-    },
-    include: { attachment: true },
-  });
-  if (!value?.attachment) return fail("Anexo nao encontrado.");
+  const attachment = await prisma.attachment.findUnique({ where: { id: parsed.data.attachmentId } });
+  if (!attachment) return fail("Anexo nao encontrado.");
 
-  await prisma.attachment.delete({ where: { id: value.attachment.id } });
-  await deleteMediaFile(value.attachment.filename);
+  await prisma.attachment.delete({ where: { id: parsed.data.attachmentId } });
+  await deleteMediaFile(attachment.filename);
 
   return { ok: true, data: undefined };
 }
 
-export async function createCard(input: unknown): Promise<ActionResult<{ id: string }>> {
+export async function createCard(input: unknown): Promise<ActionResult<{ id: string; title: string }>> {
   const key = await clientKey();
   if (!rateLimit(`mutate:${key}`, 60).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
 
@@ -500,17 +477,17 @@ export async function createCard(input: unknown): Promise<ActionResult<{ id: str
     where: { columnId: parsed.data.columnId },
     orderBy: { order: "desc" },
   });
+  const nextOrder = (last?.order ?? -1) + 1;
 
   const card = await prisma.card.create({
     data: {
       columnId: parsed.data.columnId,
-      title: parsed.data.title,
-      description: parsed.data.description || null,
-      order: (last?.order ?? -1) + 1,
+      title: parsed.data.title?.trim() || `Card ${nextOrder + 1}`,
+      order: nextOrder,
     },
   });
 
-  return { ok: true, data: { id: card.id } };
+  return { ok: true, data: { id: card.id, title: card.title } };
 }
 
 export async function updateCard(input: unknown): Promise<ActionResult> {
@@ -520,13 +497,9 @@ export async function updateCard(input: unknown): Promise<ActionResult> {
   const parsed = updateCardSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
 
-  const { cardId, ...rest } = parsed.data;
   await prisma.card.update({
-    where: { id: cardId },
-    data: {
-      ...(rest.title !== undefined ? { title: rest.title } : {}),
-      ...(rest.description !== undefined ? { description: rest.description || null } : {}),
-    },
+    where: { id: parsed.data.cardId },
+    data: { title: parsed.data.title },
   });
 
   return { ok: true, data: undefined };
@@ -566,56 +539,6 @@ export async function moveCard(input: unknown): Promise<ActionResult> {
       prisma.card.update({ where: { id }, data: { order: index } }),
     ),
   ]);
-
-  return { ok: true, data: undefined };
-}
-
-export async function uploadAttachment(formData: FormData): Promise<ActionResult<{ id: string; filename: string }>> {
-  const key = await clientKey();
-  if (!rateLimit(`upload:${key}`, 20).ok) return fail("Muitos uploads seguidos. Aguarde um instante.");
-
-  const cardId = formData.get("cardId");
-  const file = formData.get("file");
-
-  if (typeof cardId !== "string" || cardId.length === 0) return fail("Card invalido.");
-  if (!(file instanceof File)) return fail("Nenhum arquivo enviado.");
-
-  const card = await prisma.card.findUnique({ where: { id: cardId } });
-  if (!card) return fail("Card nao encontrado.");
-
-  try {
-    const stored = await storeMediaAttachment(file);
-    const attachment = await prisma.attachment.create({
-      data: {
-        cardId,
-        filename: stored.filename,
-        originalName: file.name.slice(0, 200),
-        mimeType: stored.mimeType,
-        size: stored.size,
-        width: stored.width,
-        height: stored.height,
-      },
-    });
-
-    return { ok: true, data: { id: attachment.id, filename: attachment.filename } };
-  } catch (error) {
-    if (error instanceof MediaValidationError) return fail(error.message);
-    return fail("Falha ao processar o arquivo.");
-  }
-}
-
-export async function deleteAttachment(input: unknown): Promise<ActionResult> {
-  const key = await clientKey();
-  if (!rateLimit(`mutate:${key}`, 60).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
-
-  const parsed = deleteAttachmentSchema.safeParse(input);
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
-
-  const attachment = await prisma.attachment.findUnique({ where: { id: parsed.data.attachmentId } });
-  if (!attachment) return fail("Anexo nao encontrado.");
-
-  await prisma.attachment.delete({ where: { id: parsed.data.attachmentId } });
-  await deleteMediaFile(attachment.filename);
 
   return { ok: true, data: undefined };
 }

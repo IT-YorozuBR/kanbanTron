@@ -36,7 +36,6 @@ model Column {
 model Card {
   id          String       @id @default(cuid())
   title       String
-  description String?
   order       Int
   column      Column       @relation(fields: [columnId], references: [id], onDelete: Cascade)
   columnId    String
@@ -58,10 +57,12 @@ model Attachment {
   height       Int?
   card         Card        @relation(fields: [cardId], references: [id], onDelete: Cascade)
   cardId       String
-  fieldValue   FieldValue?
+  fieldValue   FieldValue? @relation(fields: [fieldValueId], references: [id], onDelete: Cascade)
+  fieldValueId String?
   createdAt    DateTime    @default(now())
 
   @@index([cardId])
+  @@index([fieldValueId])
 }
 
 // A custom field defined on a column/stage (e.g. "Prioridade", a
@@ -88,8 +89,8 @@ model FieldDefinition {
 
 // One card's value for one field definition. Only the column matching the
 // field's type is populated (textValue for short/long text, choiceValue
-// (JSON-encoded string[]) for single/multi choice, attachment for the
-// attachment type).
+// (JSON-encoded string[]) for single/multi choice, attachments for the
+// attachment type — a single field can hold multiple files).
 model FieldValue {
   id                String          @id @default(cuid())
   card              Card            @relation(fields: [cardId], references: [id], onDelete: Cascade)
@@ -98,8 +99,7 @@ model FieldValue {
   fieldDefinitionId String
   textValue         String?
   choiceValue       String?
-  attachment        Attachment?     @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
-  attachmentId      String?         @unique
+  attachments       Attachment[]
   updatedAt         DateTime        @updatedAt
 
   @@unique([cardId, fieldDefinitionId])
