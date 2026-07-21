@@ -6,14 +6,17 @@ import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { deleteMediaFile, storeMediaAttachment, MediaValidationError } from "@/lib/media-storage";
 import {
+  createBoardSchema,
   createCardSchema,
   createColumnSchema,
   deleteAttachmentSchema,
+  deleteBoardSchema,
   deleteCardSchema,
   deleteColumnSchema,
   moveCardSchema,
   renameColumnSchema,
   reorderColumnsSchema,
+  updateBoardSchema,
   updateCardSchema,
 } from "@/lib/validation";
 
@@ -28,9 +31,27 @@ function fail(error: string): ActionResult<never> {
   return { ok: false, error };
 }
 
-export async function getOrCreateDefaultBoard() {
-  const existing = await prisma.board.findFirst({
-    orderBy: { createdAt: "asc" },
+export async function listBoards() {
+  const boards = await prisma.board.findMany({
+    orderBy: { createdAt: "desc" },
+    include: {
+      columns: { select: { _count: { select: { cards: true } } } },
+    },
+  });
+
+  return boards.map((board) => ({
+    id: board.id,
+    title: board.title,
+    accent: board.accent,
+    createdAt: board.createdAt,
+    columnCount: board.columns.length,
+    cardCount: board.columns.reduce((sum, column) => sum + column._count.cards, 0),
+  }));
+}
+
+export async function getBoard(boardId: string) {
+  return prisma.board.findUnique({
+    where: { id: boardId },
     include: {
       columns: {
         orderBy: { order: "asc" },
@@ -43,11 +64,19 @@ export async function getOrCreateDefaultBoard() {
       },
     },
   });
-  if (existing) return existing;
+}
 
-  return prisma.board.create({
+export async function createBoard(input: unknown): Promise<ActionResult<{ id: string }>> {
+  const key = await clientKey();
+  if (!rateLimit(`mutate:${key}`, 30).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
+
+  const parsed = createBoardSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
+
+  const board = await prisma.board.create({
     data: {
-      title: "Quadro principal",
+      title: parsed.data.title,
+      accent: parsed.data.accent,
       columns: {
         create: [
           { title: "A fazer", order: 0 },
@@ -56,18 +85,54 @@ export async function getOrCreateDefaultBoard() {
         ],
       },
     },
-    include: {
-      columns: {
-        orderBy: { order: "asc" },
-        include: {
-          cards: {
-            orderBy: { order: "asc" },
-            include: { attachments: { orderBy: { createdAt: "asc" } } },
-          },
-        },
-      },
+  });
+
+  revalidatePath("/");
+  return { ok: true, data: { id: board.id } };
+}
+
+export async function updateBoard(input: unknown): Promise<ActionResult> {
+  const key = await clientKey();
+  if (!rateLimit(`mutate:${key}`, 60).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
+
+  const parsed = updateBoardSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
+
+  const { boardId, ...rest } = parsed.data;
+  await prisma.board.update({
+    where: { id: boardId },
+    data: {
+      ...(rest.title !== undefined ? { title: rest.title } : {}),
+      ...(rest.accent !== undefined ? { accent: rest.accent } : {}),
     },
   });
+
+  revalidatePath("/");
+  revalidatePath(`/boards/${boardId}`);
+  return { ok: true, data: undefined };
+}
+
+export async function deleteBoard(input: unknown): Promise<ActionResult> {
+  const key = await clientKey();
+  if (!rateLimit(`mutate:${key}`, 30).ok) return fail("Muitas acoes seguidas. Aguarde um instante.");
+
+  const parsed = deleteBoardSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Dados invalidos.");
+
+  const board = await prisma.board.findUnique({
+    where: { id: parsed.data.boardId },
+    include: { columns: { include: { cards: { include: { attachments: true } } } } },
+  });
+  if (!board) return fail("Quadro nao encontrado.");
+
+  const filenames = board.columns.flatMap((column) =>
+    column.cards.flatMap((card) => card.attachments.map((a) => a.filename)),
+  );
+  await prisma.board.delete({ where: { id: parsed.data.boardId } });
+  await Promise.all(filenames.map(deleteMediaFile));
+
+  revalidatePath("/");
+  return { ok: true, data: undefined };
 }
 
 export async function createColumn(input: unknown): Promise<ActionResult<{ id: string }>> {
@@ -90,7 +155,7 @@ export async function createColumn(input: unknown): Promise<ActionResult<{ id: s
     },
   });
 
-  revalidatePath("/");
+  revalidatePath(`/boards/${parsed.data.boardId}`);
   return { ok: true, data: { id: column.id } };
 }
 
@@ -106,7 +171,6 @@ export async function renameColumn(input: unknown): Promise<ActionResult> {
     data: { title: parsed.data.title },
   });
 
-  revalidatePath("/");
   return { ok: true, data: undefined };
 }
 
@@ -127,7 +191,6 @@ export async function deleteColumn(input: unknown): Promise<ActionResult> {
   await prisma.column.delete({ where: { id: parsed.data.columnId } });
   await Promise.all(filenames.map(deleteMediaFile));
 
-  revalidatePath("/");
   return { ok: true, data: undefined };
 }
 
@@ -149,7 +212,7 @@ export async function reorderColumns(input: unknown): Promise<ActionResult> {
     ),
   );
 
-  revalidatePath("/");
+  revalidatePath(`/boards/${boardId}`);
   return { ok: true, data: undefined };
 }
 
@@ -174,7 +237,6 @@ export async function createCard(input: unknown): Promise<ActionResult<{ id: str
     },
   });
 
-  revalidatePath("/");
   return { ok: true, data: { id: card.id } };
 }
 
@@ -194,7 +256,6 @@ export async function updateCard(input: unknown): Promise<ActionResult> {
     },
   });
 
-  revalidatePath("/");
   return { ok: true, data: undefined };
 }
 
@@ -214,7 +275,6 @@ export async function deleteCard(input: unknown): Promise<ActionResult> {
   await prisma.card.delete({ where: { id: parsed.data.cardId } });
   await Promise.all(card.attachments.map((a) => deleteMediaFile(a.filename)));
 
-  revalidatePath("/");
   return { ok: true, data: undefined };
 }
 
@@ -234,7 +294,6 @@ export async function moveCard(input: unknown): Promise<ActionResult> {
     ),
   ]);
 
-  revalidatePath("/");
   return { ok: true, data: undefined };
 }
 
@@ -265,7 +324,6 @@ export async function uploadAttachment(formData: FormData): Promise<ActionResult
       },
     });
 
-    revalidatePath("/");
     return { ok: true, data: { id: attachment.id, filename: attachment.filename } };
   } catch (error) {
     if (error instanceof MediaValidationError) return fail(error.message);
@@ -286,8 +344,8 @@ export async function deleteAttachment(input: unknown): Promise<ActionResult> {
   await prisma.attachment.delete({ where: { id: parsed.data.attachmentId } });
   await deleteMediaFile(attachment.filename);
 
-  revalidatePath("/");
   return { ok: true, data: undefined };
 }
 
-export type BoardData = Awaited<ReturnType<typeof getOrCreateDefaultBoard>>;
+export type BoardData = NonNullable<Awaited<ReturnType<typeof getBoard>>>;
+export type BoardSummary = Awaited<ReturnType<typeof listBoards>>[number];

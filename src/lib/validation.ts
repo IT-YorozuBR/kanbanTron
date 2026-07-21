@@ -1,6 +1,22 @@
 import { z } from "zod";
 
 const cuid = z.string().min(1).max(64);
+const accent = z.enum(["blue", "lime", "tangerine", "grape", "berry"]);
+
+export const createBoardSchema = z.object({
+  title: z.string().trim().min(1, "Informe um titulo").max(60),
+  accent,
+});
+
+export const updateBoardSchema = z.object({
+  boardId: cuid,
+  title: z.string().trim().min(1, "Informe um titulo").max(60).optional(),
+  accent: accent.optional(),
+});
+
+export const deleteBoardSchema = z.object({
+  boardId: cuid,
+});
 
 export const createColumnSchema = z.object({
   boardId: cuid,

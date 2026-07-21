@@ -1,22 +1,20 @@
-import { getOrCreateDefaultBoard } from "@/lib/actions";
-import { BoardLoader } from "@/components/board/board-loader";
+import { listBoards } from "@/lib/actions";
+import { BoardsList } from "@/components/boards/boards-list";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const board = await getOrCreateDefaultBoard();
+  const boards = await listBoards();
 
   return (
     <main className="flex flex-1 flex-col gap-6 p-6 md:p-10">
-      <header className="aero-glass flex items-center justify-between px-6 py-4">
-        <div>
-          <h1 className="text-xl font-extrabold tracking-tight">{board.title}</h1>
-          <p className="text-sm text-black/60 dark:text-white/60">
-            Arraste os cards entre as fases e anexe imagens diretamente no card.
-          </p>
-        </div>
+      <header className="aero-glass px-6 py-4">
+        <h1 className="text-xl font-extrabold tracking-tight">Meus quadros</h1>
+        <p className="text-sm text-black/60 dark:text-white/60">
+          Crie quantos quadros kanban precisar, cada um com seu proprio nome e cor.
+        </p>
       </header>
-      <BoardLoader boardId={board.id} initialColumns={board.columns} />
+      <BoardsList initialBoards={boards} />
     </main>
   );
 }
