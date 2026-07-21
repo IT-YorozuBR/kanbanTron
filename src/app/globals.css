@@ -1,0 +1,259 @@
+@import "tailwindcss";
+
+:root {
+  --background: #eef6ff;
+  --foreground: #1c2b3a;
+
+  --aero-blue: #2fb9ff;
+  --aero-blue-dark: #0d7fd6;
+  --aero-lime: #a6e22e;
+  --aero-lime-dark: #6ea315;
+  --aero-tangerine: #ff9a3c;
+  --aero-tangerine-dark: #e8720f;
+  --aero-grape: #b16bff;
+  --aero-grape-dark: #7e3fd1;
+  --aero-berry: #ff5c8a;
+  --aero-berry-dark: #d92e5f;
+
+  --glass-fill: rgba(255, 255, 255, 0.42);
+  --glass-fill-strong: rgba(255, 255, 255, 0.62);
+  --glass-border: rgba(255, 255, 255, 0.75);
+  --glass-shadow: rgba(20, 60, 110, 0.25);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b1624;
+    --foreground: #eaf3ff;
+    --glass-fill: rgba(20, 34, 54, 0.5);
+    --glass-fill-strong: rgba(28, 46, 72, 0.65);
+    --glass-border: rgba(255, 255, 255, 0.14);
+    --glass-shadow: rgba(0, 0, 0, 0.45);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.55), transparent 42%),
+    radial-gradient(circle at 88% 6%, rgba(166, 226, 46, 0.35), transparent 40%),
+    radial-gradient(circle at 90% 92%, rgba(177, 107, 255, 0.3), transparent 45%),
+    radial-gradient(circle at 6% 90%, rgba(255, 154, 60, 0.3), transparent 42%),
+    linear-gradient(160deg, #dff3ff 0%, #eaf7ff 35%, #f3ecff 70%, #ffe9da 100%);
+  background-attachment: fixed;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background:
+      radial-gradient(circle at 12% 8%, rgba(47, 185, 255, 0.16), transparent 42%),
+      radial-gradient(circle at 88% 6%, rgba(166, 226, 46, 0.12), transparent 40%),
+      radial-gradient(circle at 90% 92%, rgba(177, 107, 255, 0.16), transparent 45%),
+      radial-gradient(circle at 6% 90%, rgba(255, 154, 60, 0.12), transparent 42%),
+      linear-gradient(160deg, #0b1624 0%, #0e1c2e 40%, #131329 75%, #1a1224 100%);
+    background-attachment: fixed;
+  }
+}
+
+/* Frosted glass surface shared by panels, columns and cards. */
+.aero-glass {
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-border);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.8) inset,
+    0 18px 40px -18px var(--glass-shadow);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  position: relative;
+}
+
+/* Classic Aero/Aqua specular highlight along the top edge. */
+.aero-glass::before {
+  content: "";
+  position: absolute;
+  inset: 1px 1px auto 1px;
+  height: 44%;
+  border-radius: 1.1rem 1.1rem 2rem 2rem / 1.1rem 1.1rem 1.6rem 1.6rem;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
+.aero-card {
+  background: var(--glass-fill-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: 1rem;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.85) inset,
+    0 10px 22px -12px var(--glass-shadow);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.aero-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 40%;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
+.aero-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.85) inset,
+    0 16px 30px -14px var(--glass-shadow);
+}
+
+/* Glossy pill button with candy-color gradients, selectable per element via
+   the --aero-a / --aero-b custom properties. */
+.aero-button {
+  --aero-a: var(--aero-blue);
+  --aero-b: var(--aero-blue-dark);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  padding: 0.55rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: white;
+  background: linear-gradient(to bottom, var(--aero-a), var(--aero-b));
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 6px 14px -4px color-mix(in srgb, var(--aero-b) 60%, transparent);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.aero-button::before {
+  content: "";
+  position: absolute;
+  inset: 2px 2px auto 2px;
+  height: 46%;
+  border-radius: 999px;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
+.aero-button:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.aero-button:active {
+  transform: translateY(0);
+  filter: brightness(0.97);
+}
+
+.aero-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
+}
+
+.aero-button-ghost {
+  background: var(--glass-fill);
+  color: var(--foreground);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+
+.aero-button-ghost::before {
+  display: none;
+}
+
+.aero-button-lime {
+  --aero-a: var(--aero-lime);
+  --aero-b: var(--aero-lime-dark);
+}
+
+.aero-button-tangerine {
+  --aero-a: var(--aero-tangerine);
+  --aero-b: var(--aero-tangerine-dark);
+}
+
+.aero-button-grape {
+  --aero-a: var(--aero-grape);
+  --aero-b: var(--aero-grape-dark);
+}
+
+.aero-button-berry {
+  --aero-a: var(--aero-berry);
+  --aero-b: var(--aero-berry-dark);
+}
+
+.aero-input {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.55);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--foreground);
+  outline: none;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  .aero-input {
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.aero-input:focus {
+  border-color: var(--aero-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--aero-blue) 30%, transparent);
+}
+
+.aero-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--aero-blue) transparent;
+}
+
+.aero-scroll::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.aero-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(var(--aero-blue), var(--aero-blue-dark));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.aero-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.aero-dragging {
+  opacity: 0.5;
+}
+
+.aero-drop-target {
+  outline: 2px dashed color-mix(in srgb, var(--aero-blue) 70%, transparent);
+  outline-offset: 4px;
+}
