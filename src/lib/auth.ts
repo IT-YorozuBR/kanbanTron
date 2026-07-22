@@ -43,7 +43,11 @@ export async function createSession(userId: string): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    // Tied to whether the deployment actually terminates TLS, not NODE_ENV:
+    // this app is served over plain HTTP on port 3010 with no reverse proxy,
+    // so a `Secure` cookie would be silently dropped by the browser, causing
+    // an infinite login loop (login succeeds, cookie never gets stored).
+    secure: process.env.COOKIE_SECURE === "true",
     sameSite: "lax",
     path: "/",
     expires: expiresAt,

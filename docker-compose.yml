@@ -9,6 +9,10 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: file:/app/data/app.db
+      # No TLS termination in front of this container (plain HTTP on 3010) —
+      # a Secure cookie would be dropped by the browser, causing an endless
+      # login loop. Set to "true" if a reverse proxy adds HTTPS in front.
+      COOKIE_SECURE: "false"
     volumes:
       - data:/app/data
 
